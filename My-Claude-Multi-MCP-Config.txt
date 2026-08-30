@@ -1,0 +1,71 @@
+{
+  "preferences": {
+    "launchPreviewPersistedWorkspaces": [],
+    "launchPreviewSessionScopedSessions": [],
+    "remoteToolsDeviceName": "desktop-6v33crk",
+    "epitaxyPrefs": {
+      "desktop-frame.paneStore.v1": {
+        "state": {
+          "extraPanesByMode": {},
+          "colWeightsByMode": {},
+          "rowSplit": 0.5,
+          "draftNonce": 0
+        },
+        "version": 4
+      },
+      "dframe-group-scopes": {},
+      "dframe-local-slice": {
+        "pinnedOrder": [],
+        "homeProjectsPinnedOrder": []
+      },
+      "starred-local-code-sessions": [],
+      "starred-session-groups": [],
+      "starred-cowork-spaces": [],
+      "ccd-sessions-filter": {
+        "state": {
+          "selectedProjects": []
+        },
+        "version": 0
+      }
+    },
+    "coworkScheduledTasksEnabled": true,
+    "ccdScheduledTasksEnabled": true,
+    "coworkHipaaRestricted": false,
+    "orgWorkAcrossAppsDisabled": false,
+    "coworkWebSearchEnabled": true,
+    "coworkBrowserToolsEnabled": true,
+    "coworkPreferredBrowser": "built_in",
+    "coworkModelAutoFallbackByAccount": {
+      "7791e800-8cbb-4b20-b383-bd4ba35adbce": true
+    },
+    "bypassPermissionsGateByAccount": {
+      "7791e800-8cbb-4b20-b383-bd4ba35adbce": false
+    }
+  },
+
+  "coworkUserFilesPath": "C:\\Users\\ShahidMalik\\Claude",
+
+  "mcpServers": {
+    "eks-readonly": {
+      "command": "D:\\git-code-repo-shahid\\Agentic-Ai\\eks-readonly-mcp\\venv\\Scripts\\python.exe",
+      "args": [
+        "D:\\git-code-repo-shahid\\Agentic-Ai\\eks-readonly-mcp\\server.py"
+      ],
+      "env": {
+        "BASTION_HOST": "10.11.80.131",
+        "BASTION_PORT": "22",
+        "BASTION_USER": "ubuntu",
+        "BASTION_KEY_PATH": "D:\\Solveda-Data-OnDrive-10-oct-25\\OneDrive - SAKSOFT LIMITED\\Office Brands Project\\OB-AWS-Pem-Key\\ob-aws-key-for-9-1-11-0\\ob-dev-bastion-9-1-11-0.pem",
+        "KUBERNETES_USER": "solveda",
+        "SSH_TIMEOUT": "15",
+        "COMMAND_TIMEOUT": "30"
+      }
+    },
+	    "windows-ai": {
+      "command": "D:\\AI-Agents-DevOps\\venv\\Scripts\\python.exe",
+      "args": [
+        "D:\\AI-Agents-DevOps\\AI-Agent\\mcp-server.py"
+      ]
+    }
+  }
+}
