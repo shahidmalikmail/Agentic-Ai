@@ -1,0 +1,175 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: linear-gradient(135deg, #6a5cf7, #4361ee);
+}
+
+.container {
+    background: #ffffff;
+    width: 100%;
+    max-width: 480px;
+    padding: 40px 32px;
+    border-radius: 16px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+}
+
+.container.wide {
+    max-width: 800px;
+}
+
+h1 {
+    margin: 0 0 8px;
+    font-size: 28px;
+    color: #222;
+    text-align: center;
+}
+
+.subtitle {
+    margin: 0 0 24px;
+    text-align: center;
+    color: #666;
+    font-size: 14px;
+}
+
+form {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+input[type="text"] {
+    flex: 1 1 220px;
+    padding: 12px 14px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 15px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+input[type="text"]:focus {
+    border-color: #4361ee;
+}
+
+button {
+    padding: 12px 20px;
+    border: none;
+    border-radius: 8px;
+    background: #4361ee;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+button:hover {
+    background: #3a53d0;
+}
+
+.result {
+    margin-top: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 14px 16px;
+    background: #f0f4ff;
+    border: 1px solid #d6e0ff;
+    border-radius: 8px;
+}
+
+.result span {
+    word-break: break-all;
+    font-size: 14px;
+    color: #333;
+}
+
+.result button {
+    flex-shrink: 0;
+    padding: 8px 14px;
+    font-size: 13px;
+}
+
+.message {
+    margin-top: 16px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.error-message {
+    background: #fdecea;
+    color: #c0392b;
+    border: 1px solid #f5c6c2;
+}
+
+.hidden {
+    display: none;
+}
+
+.nav-link {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 14px;
+}
+
+.nav-link a {
+    color: #4361ee;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.nav-link a:hover {
+    text-decoration: underline;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 16px;
+    font-size: 14px;
+}
+
+th, td {
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+}
+
+th {
+    background: #f7f8fc;
+    color: #444;
+}
+
+.original-url {
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.empty-message {
+    text-align: center;
+    color: #888;
+    margin-top: 24px;
+}
+
+@media (max-width: 480px) {
+    .container {
+        padding: 28px 20px;
+    }
+
+    form {
+        flex-direction: column;
+    }
+}

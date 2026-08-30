@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>All Short URLs</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container wide">
+        <h1>Shortened URLs</h1>
+        <p class="nav-link"><a href="/">&larr; Back to shortener</a></p>
+
+        {% if urls %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Short URL</th>
+                    <th>Original URL</th>
+                    <th>Clicks</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in urls %}
+                <tr>
+                    <td><a href="/{{ u.short_code }}" target="_blank">/{{ u.short_code }}</a></td>
+                    <td class="original-url" title="{{ u.original_url }}">{{ u.original_url }}</td>
+                    <td>{{ u.clicks }}</td>
+                    <td>{{ u.created_at }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="empty-message">No URLs have been shortened yet.</p>
+        {% endif %}
+    </div>
+</body>
+</html>
