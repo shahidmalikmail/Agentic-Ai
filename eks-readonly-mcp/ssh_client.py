@@ -37,10 +37,13 @@ class RemoteCommandError(Exception):
     """Raised when a remote command exits non-zero."""
 
 
-# Only "kubectl get ..." and "kubectl cluster-info" may ever be executed.
-# This is intentionally narrower than the tool set even needs, so any bug in
-# server.py's command construction still cannot reach a mutating verb.
-_ALLOWED_PATTERN = re.compile(r"^kubectl\s+(get|cluster-info)\b", re.IGNORECASE)
+# Only these read-only kubectl subcommands may ever be executed: "get",
+# "cluster-info", "version", "api-resources", "logs". This is intentionally
+# narrower than the tool set even needs, so any bug in server.py's command
+# construction still cannot reach a mutating verb.
+_ALLOWED_PATTERN = re.compile(
+    r"^kubectl\s+(get|cluster-info|version|api-resources|logs)\b", re.IGNORECASE
+)
 
 _FORBIDDEN_PATTERN = re.compile(
     r"\b(delete|apply|create|patch|edit|replace|scale|rollout|exec|port-forward|cp|"

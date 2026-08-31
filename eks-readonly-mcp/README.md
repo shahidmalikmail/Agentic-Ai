@@ -8,18 +8,67 @@ Claude Desktop -> this MCP server (stdio) -> SSH -> bastion -> `sudo -u solveda 
 
 ## Safety model
 
-- Only 9 fixed tools exist (`get_cluster_info`, `get_namespaces`, `get_nodes`,
-  `get_pods`, `get_deployments`, `get_services`, `get_ingress`, `get_hpa`,
-  `get_events`). There is no generic "run a command" tool, and no tool
-  accepts a raw kubectl string from the model.
+- A fixed set of read-only tools exist (cluster/version/api-resources info;
+  `get_namespaces`, `get_nodes`; workloads: pods, deployments, replicasets,
+  statefulsets, daemonsets, jobs, cronjobs; networking: services, endpoints,
+  endpointslices, ingress, networkpolicies; scaling: hpa, pdb; config:
+  configmaps, secrets metadata (values always redacted); storage: pv, pvc,
+  storageclasses; RBAC: serviceaccounts, roles, rolebindings, clusterroles,
+  clusterrolebindings; health: events; and `get_pod_logs` for pod/container
+  logs). There is no generic "run a command" tool, and no tool accepts a raw
+  kubectl string from the model.
 - Every command is assembled from a hardcoded resource name and a validated
-  namespace (`server.py`), then independently re-checked in `ssh_client.py`
-  against an allow-list that permits only `kubectl get` / `kubectl
-  cluster-info` and rejects any mutating verb or shell metacharacter, even
-  if `server.py` had a bug.
+  namespace/pod/container (`server.py`), then independently re-checked in
+  `ssh_client.py` against an allow-list that permits only `kubectl get`,
+  `cluster-info`, `version`, `api-resources`, and `logs`, and rejects any
+  mutating verb or shell metacharacter, even if `server.py` had a bug. No
+  tool ever builds `exec`, `cp`, `attach`, or `port-forward`.
+- Secret values are never returned: `get_secrets_metadata` strips
+  `data`/`stringData` fields in Python before the response leaves the
+  server, regardless of what kubectl outputs.
+- `get_pod_logs` caps `tail_lines` at 1000 (default 100) and requires an
+  explicit namespace and pod name.
 - The kubeconfig and AWS credentials never leave the bastion. Nothing is
   copied to Windows, and command output/stderr is never logged with secret
   material.
+- Every tool takes an explicit `env` parameter (`"dev"` by default, or
+  `"uat"`) that selects which bastion/cluster it targets. There is no
+  hidden "current environment" state and no environment-switching tool -
+  each call states its own target and every response is tagged
+  `[env=dev]`/`[env=uat]`. Requesting an unconfigured or unknown env (e.g.
+  `"prod"`, not yet supported) returns a clear error, never a fallback to
+  the wrong cluster.
+
+## Multi-environment (DEV / UAT)
+
+Configure one or both environments via env vars (see `.env.example`):
+
+```
+DEV_BASTION_HOST=10.11.80.131
+DEV_BASTION_PORT=22
+DEV_BASTION_USER=ubuntu
+DEV_BASTION_KEY_PATH=C:\path\to\dev-bastion-openssh.key
+
+UAT_BASTION_HOST=10.12.80.197
+UAT_BASTION_PORT=22
+UAT_BASTION_USER=ubuntu
+UAT_BASTION_KEY_PATH=C:\path\to\uat-bastion-openssh.key
+
+KUBERNETES_USER=solveda
+```
+
+If `DEV_BASTION_*` are not set, `dev` falls back to the legacy unprefixed
+`BASTION_*` variables - an existing single-environment `.env` or Claude
+Desktop config keeps working unchanged. `uat` has no such fallback: all
+three `UAT_BASTION_*` variables are required together, or `uat` stays
+unconfigured (tools called with `env="uat"` then return a clear error
+instead of a crash). `prod` is not yet supported by any tool.
+
+Every tool accepts `env`, e.g.:
+
+- `get_pods(namespace="commerce")` → dev (default)
+- `get_pods(namespace="commerce", env="uat")` → UAT
+- `get_pod_logs(namespace="commerce", pod="checkout-7d9", env="uat")` → UAT pod logs
 
 ## About the SSH key (.ppk)
 
@@ -102,10 +151,14 @@ exist) and add an entry under `mcpServers`. Use absolute paths to the venv's
         "D:\\git-code-repo-shahid\\Agentic-Ai\\eks-readonly-mcp\\server.py"
       ],
       "env": {
-        "BASTION_HOST": "10.11.80.131",
-        "BASTION_PORT": "22",
-        "BASTION_USER": "ubuntu",
-        "BASTION_KEY_PATH": "D:\Solveda-Data-OnDrive-10-oct-25\OneDrive - SAKSOFT LIMITED\Office Brands Project\OB-AWS-Pem-Key\ob-aws-key-for-9-1-11-0\ob-dev-bastion-9-1-11-0.pem",
+        "DEV_BASTION_HOST": "10.11.80.131",
+        "DEV_BASTION_PORT": "22",
+        "DEV_BASTION_USER": "ubuntu",
+        "DEV_BASTION_KEY_PATH": "D:\\path\\to\\dev-bastion-openssh.key",
+        "UAT_BASTION_HOST": "10.12.80.197",
+        "UAT_BASTION_PORT": "22",
+        "UAT_BASTION_USER": "ubuntu",
+        "UAT_BASTION_KEY_PATH": "D:\\path\\to\\uat-bastion-openssh.key",
         "KUBERNETES_USER": "solveda",
         "SSH_TIMEOUT": "15",
         "COMMAND_TIMEOUT": "30"
@@ -121,11 +174,12 @@ cluster.
 
 ## Example prompts to test
 
-- "Show all EKS namespaces."
-- "Show all pods in the commerce namespace."
+- "Show all EKS namespaces." (dev, by default)
+- "Show all pods in the commerce namespace in UAT."
 - "Show HPA status across all namespaces."
 - "Show all nodes and their status."
 - "Give me a read-only summary of the EKS cluster health."
+- "Get the last 200 log lines for pod checkout-7d9 in the commerce namespace, UAT."
 
 Claude Desktop interprets the returned JSON itself - this server does no
 analysis, it only fetches data.
