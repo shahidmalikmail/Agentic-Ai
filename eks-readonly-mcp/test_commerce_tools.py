@@ -1,13 +1,13 @@
 """Unit tests for commerce_tools.py.
 
 Pure parsing logic is tested directly; everything that talks to the
-cluster goes through server._run() or server.get_pod_logs() as imported
-into this module's namespace (`commerce_tools._run` /
-`commerce_tools.get_pod_logs`), so patching those two names is sufficient
-to exercise every tool function with no SSH/network/live cluster.
-Importing commerce_tools pulls in server.py, which loads config from the
-environment (.env) at import time; that's an existing property of the
-module, not something these tests add.
+cluster goes through kube_core._run() or kube_core.get_pod_logs_impl() as
+imported into this module's namespace (`commerce_tools._run` /
+`commerce_tools.get_pod_logs_impl`), so patching those two names is
+sufficient to exercise every tool function with no SSH/network/live
+cluster. Importing commerce_tools pulls in kube_core.py, which loads
+config from the environment (.env) at import time; that's an existing
+property of the module, not something these tests add.
 """
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def _pod_line(name, namespace, phase="Running", release=None, group=None,
 
 
 def _fake_run(pod_lines_by_ns=None, events_by_ns=None):
-    """Build a fake server._run() replacement: routes `get pods -n X` to
+    """Build a fake kube_core._run() replacement: routes `get pods -n X` to
     canned custom-columns rows and `get events -n X` to canned Warning
     event JSON, keyed by namespace. Anything else errors loudly rather
     than silently returning nothing, so a test typo surfaces immediately."""
@@ -244,7 +244,7 @@ class CollectComponentLogsTests(unittest.TestCase):
             return f"[env={env}]\nsome log line"
 
         with patch.object(ct, "_run", side_effect=run), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             entries, errors, total = ct._collect_component_logs(
                 "ts-app", "commerce", 100, None, False, "dev", auto_previous_on_restart=True
             )
@@ -260,7 +260,7 @@ class CollectComponentLogsTests(unittest.TestCase):
             return f"[env={env}]\nsome log line"
 
         with patch.object(ct, "_run", side_effect=run), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             entries, errors, total = ct._collect_component_logs(
                 "ts-app", "commerce", 100, None, False, "dev", auto_previous_on_restart=True
             )
@@ -278,7 +278,7 @@ class CollectComponentLogsTests(unittest.TestCase):
             return f"[env={env}]\nsome log line"
 
         with patch.object(ct, "_run", side_effect=run), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             entries, errors, total = ct._collect_component_logs(
                 "ts-app", "commerce", 100, None, False, "dev", auto_previous_on_restart=False
             )
@@ -294,7 +294,7 @@ class CollectComponentLogsTests(unittest.TestCase):
             return f"[env={env}]\n" + "\n".join(f"line{i}" for i in range(tail_lines))
 
         with patch.object(ct, "_run", side_effect=run), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             entries, _, _ = ct._collect_component_logs("ts-app", "commerce", 50, None, False, "dev")
 
         self.assertEqual(entries[0]["log_coverage"]["requested_tail_lines"], 50)
@@ -309,7 +309,7 @@ class CollectComponentLogsTests(unittest.TestCase):
             return f"[env={env}]\nonly one line"
 
         with patch.object(ct, "_run", side_effect=run), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             entries, _, _ = ct._collect_component_logs("ts-app", "commerce", 50, None, False, "dev")
 
         self.assertFalse(entries[0]["log_coverage"]["tail_cap_hit"])
@@ -322,7 +322,7 @@ class CollectComponentLogsTests(unittest.TestCase):
             return f"[env={env}]\nlog"
 
         with patch.object(ct, "_run", side_effect=run), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             entries, _, _ = ct._collect_component_logs("ts-app", "commerce", 100, None, False, "dev")
 
         entry = entries[0]
@@ -696,7 +696,7 @@ class GetCommerceComponentLogsToolTests(unittest.TestCase):
             return f"[env={env}]\nline1\nline2"
 
         with patch.object(ct, "_run", side_effect=_fake_run(pods)), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             result = ct.get_commerce_component_logs(component="ts-app", env="dev")
         body = _body(result)
         self.assertIn("log_coverage", body["logs"][0])
@@ -719,7 +719,7 @@ class AnalyzeCommerceComponentErrorsToolTests(unittest.TestCase):
             return f"[env={env}]\n{log_text}"
 
         with patch.object(ct, "_run", side_effect=_fake_run(pods)), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             result = ct.analyze_commerce_component_errors(component="ts-app", env="dev")
         body = _body(result)
         finding = body["pods"][0]["findings"][0]
@@ -736,7 +736,7 @@ class AnalyzeCommerceComponentErrorsToolTests(unittest.TestCase):
             return f"[env={env}]\nlog for previous={previous}"
 
         with patch.object(ct, "_run", side_effect=_fake_run(pods)), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             result = ct.analyze_commerce_component_errors(component="ts-app", env="dev")
         body = _body(result)
         sources = sorted(p["log_source"] for p in body["pods"])
@@ -761,7 +761,7 @@ class AnalyzeCommerceComponentErrorsToolTests(unittest.TestCase):
             return f"[env={env}]\nINFO ok"
 
         with patch.object(ct, "_run", side_effect=_fake_run(pods)), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             result = ct.analyze_commerce_component_errors(component="search-app", env="dev")
         body = _body(result)
         leaf_components = sorted(p["leaf_component"] for p in body["pods"])
@@ -782,7 +782,7 @@ class CorrelateCommerceErrorsToolTests(unittest.TestCase):
             return f"[env={env}]\nRead timed out"
 
         with patch.object(ct, "_run", side_effect=_fake_run(pods)), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             result = ct.correlate_commerce_errors(components=["ts-app", "crs-app"], env="dev")
         body = _body(result)
         self.assertIn("timeout", body["co_occurring_categories"])
@@ -804,7 +804,7 @@ class CorrelateCommerceErrorsToolTests(unittest.TestCase):
             return f"[env={env}]\nINFO ok"
 
         with patch.object(ct, "_run", side_effect=_fake_run(pods)), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             result = ct.correlate_commerce_errors(components=["ts-app"], env="dev")
         body = _body(result)
         self.assertEqual(body["components"]["ts-app"]["release"], "ob-dev-live")
@@ -829,7 +829,7 @@ class DiagnoseCommerceIssueToolTests(unittest.TestCase):
             return f"[env={env}]\nINFO nothing wrong here"
 
         with patch.object(ct, "_run", side_effect=_fake_run(pods)), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             result = ct.diagnose_commerce_issue(
                 issue_description="test", components=["ts-app", "crs-app"], env="dev"
             )
@@ -855,7 +855,7 @@ class DiagnoseCommerceIssueToolTests(unittest.TestCase):
             return f"[env={env}]\nINFO clean log"
 
         with patch.object(ct, "_run", side_effect=_fake_run(pods, events)), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             result = ct.diagnose_commerce_issue(
                 issue_description="test", components=["ts-app"], env="dev"
             )
@@ -873,7 +873,7 @@ class DiagnoseCommerceIssueToolTests(unittest.TestCase):
             return f"[env={env}]\nINFO fine"
 
         with patch.object(ct, "_run", side_effect=_fake_run(pods)), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             result = ct.diagnose_commerce_issue(
                 issue_description="test", components=["ts-app"], env="dev"
             )
@@ -961,7 +961,7 @@ class CorrelateCommerceTimelineToolTests(unittest.TestCase):
             return f"[env={env}]\n2026-09-04T12:00:00Z ERROR timeout occurred"
 
         with patch.object(ct, "_run", side_effect=_fake_run(self._pods_fixture())), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             result = ct.correlate_commerce_timeline(components=["ts-app", "crs-app"], env="dev")
         body = _body(result)
         for key in ("components", "since", "window_seconds", "namespaces_checked",
@@ -978,7 +978,7 @@ class CorrelateCommerceTimelineToolTests(unittest.TestCase):
             return f"[env={env}]\n2026-09-04T12:00:05Z ERROR connection refused"
 
         with patch.object(ct, "_run", side_effect=_fake_run(self._pods_fixture())), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             result = ct.correlate_commerce_timeline(components=["ts-app", "crs-app"], env="dev")
         body = _body(result)
         self.assertEqual(len(body["correlation_groups"]), 1)
@@ -993,7 +993,7 @@ class CorrelateCommerceTimelineToolTests(unittest.TestCase):
             return f"[env={env}]\n2026-09-04T12:00:00Z ERROR timeout occurred"
 
         with patch.object(ct, "_run", side_effect=_fake_run(self._pods_fixture())), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             result = ct.correlate_commerce_timeline(components=["ts-app"], env="dev")
         body = _body(result)
         obs = body["correlation_groups"][0]["observations"][0]
@@ -1014,7 +1014,7 @@ class CorrelateCommerceTimelineToolTests(unittest.TestCase):
             return f"[env={env}]\n2026-09-04T12:00:00Z ERROR timeout occurred"
 
         with patch.object(ct, "_run", side_effect=_fake_run(self._pods_fixture(), events)), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             result = ct.correlate_commerce_timeline(components=["ts-app"], env="dev")
         body = _body(result)
         sources = {o["source"] for g in body["correlation_groups"] for o in g["observations"]}
@@ -1026,7 +1026,7 @@ class CorrelateCommerceTimelineToolTests(unittest.TestCase):
             return f"[env={env}]\n2026-09-04T12:00:00Z ERROR timeout occurred"
 
         with patch.object(ct, "_run", side_effect=_fake_run(self._pods_fixture())), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             result = ct.correlate_commerce_timeline(components=["ts-app"], window_seconds=120, env="dev")
         body = _body(result)
         self.assertEqual(body["window_seconds"], 120)
@@ -1037,7 +1037,7 @@ class CorrelateCommerceTimelineToolTests(unittest.TestCase):
             return f"[env={env}]\n2026-09-04T12:00:00Z ERROR timeout occurred"
 
         with patch.object(ct, "_run", side_effect=_fake_run(self._pods_fixture())), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             result = ct.correlate_commerce_timeline(components=["ts-app"], window_seconds=99999, env="dev")
         body = _body(result)
         self.assertEqual(body["window_seconds"], 3600)
@@ -1064,7 +1064,7 @@ class CorrelateCommerceTimelineToolTests(unittest.TestCase):
             return f"[env={env}]\n{log_text}"
 
         with patch.object(ct, "_run", side_effect=_fake_run(pods)), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             result = ct.correlate_commerce_timeline(components=["ts-app"], env="dev")
         body = _body(result)
         self.assertEqual(len(body["correlation_groups"]), ct._MAX_CORRELATION_GROUPS + 1)
@@ -1091,7 +1091,7 @@ class CorrelateCommerceTimelineToolTests(unittest.TestCase):
             return f"[env={env}]\nRead timed out"
 
         with patch.object(ct, "_run", side_effect=_fake_run(pods)), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             result = ct.correlate_commerce_errors(components=["ts-app", "crs-app"], env="dev")
         body = _body(result)
         self.assertIn("timeout", body["co_occurring_categories"])
@@ -1106,7 +1106,7 @@ class CorrelateCommerceTimelineToolTests(unittest.TestCase):
             return f"[env={env}]\nINFO fine"
 
         with patch.object(ct, "_run", side_effect=_fake_run(pods)), \
-             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+             patch.object(ct, "get_pod_logs_impl", side_effect=get_pod_logs):
             result = ct.diagnose_commerce_issue(issue_description="test", components=["ts-app"], env="dev")
         body = _body(result)
         self.assertIn("likely_cause", body)

@@ -1,10 +1,17 @@
-"""HCL Commerce 9.1 troubleshooting/diagnostic layer, layered on top of the
-existing read-only EKS MCP tools. This module adds ONLY new MCP tools - it
-never modifies, refactors, or bypasses server.py's existing tools, and it
-never issues a kubectl verb outside `get`/`logs` (both already on
-ssh_client.py's allow-list). Every kubectl call this module makes goes
-through the existing, unmodified server._run() or server.get_pod_logs(),
-so the read-only guard and env routing are identical to every other tool.
+"""HCL Commerce 9.1 troubleshooting/diagnostic layer. This module defines
+ONLY the 7 Commerce MCP tools - it never modifies, refactors, or bypasses
+any of the 31 standard Kubernetes tools in server.py, and it never issues a
+kubectl verb outside `get`/`logs` (both already on ssh_client.py's
+allow-list). Every kubectl call this module makes goes through the
+existing, unmodified kube_core._run() or kube_core.get_pod_logs_impl(), so
+the read-only guard and env routing are identical to every other tool -
+standard or Commerce.
+
+This module is registered onto its own eks-commerce MCPServer instance
+(see commerce_server.py) via the register(mcp) function at the bottom of
+this file. It deliberately never imports server.py and never creates or
+imports a global MCPServer of its own, so it can be loaded standalone
+without pulling in the 31 standard tools.
 
 Component identity is resolved live against real pod data via
 commerce_mapping - no pod name is ever hardcoded. Log text is always
@@ -31,12 +38,11 @@ import commerce_correlation
 import commerce_knowledge
 import commerce_log_analyzer
 import commerce_mapping
-from server import (
+from kube_core import (
     _MAX_OUTPUT_CHARS,
     _run,
     _validate_required_namespace,
-    get_pod_logs,
-    mcp,
+    get_pod_logs_impl,
 )
 
 _MAX_PODS_PER_COMPONENT = 3
@@ -69,11 +75,11 @@ _KEYWORD_COMPONENT_HINTS: dict[str, tuple[str, ...]] = {
 
 
 # --------------------------------------------------------------------------
-# Internal helpers - all read-only, all built on server._run/get_pod_logs.
+# Internal helpers - all read-only, all built on kube_core._run/get_pod_logs_impl.
 # --------------------------------------------------------------------------
 
 def _run_json(kubectl_command: str, env: str) -> tuple[Optional[dict], Optional[str]]:
-    """Run a kubectl command via the existing, unmodified server._run() and
+    """Run a kubectl command via the existing, unmodified kube_core._run() and
     parse its JSON body. Returns (data, None) on success or (None, the
     original [env=...]-tagged message) on any error/non-JSON output."""
     raw = _run(kubectl_command, env=env)
@@ -254,7 +260,7 @@ def _collect_component_logs(
     auto_previous_on_restart: bool = False,
 ) -> tuple[list[dict], list[str], int]:
     """Fetch bounded, redacted logs for up to _MAX_PODS_PER_COMPONENT pods
-    of a component, via the existing get_pod_logs() tool (unmodified) -
+    of a component, via the existing get_pod_logs_impl() (unmodified) -
     every validation/guard it already applies (namespace/pod/container
     regex, tail cap, since format) applies here too.
 
@@ -274,7 +280,7 @@ def _collect_component_logs(
             sources = [previous]
 
         for is_previous in sources:
-            raw = get_pod_logs(
+            raw = get_pod_logs_impl(
                 namespace=pod.namespace,
                 pod=pod.pod,
                 container=pod.container,
@@ -674,7 +680,6 @@ def _correlation_group_to_dict(group: commerce_correlation.CorrelationGroup) -> 
 # Tools
 # --------------------------------------------------------------------------
 
-@mcp.tool()
 def list_commerce_components(namespace: str = "commerce", env: str = "dev") -> str:
     """List configured HCL Commerce components (ts-app, crs-app, ts-web,
     store-web, search-app, cache-app, nginx, redis, tooling-web, wcbd,
@@ -732,7 +737,6 @@ def list_commerce_components(namespace: str = "commerce", env: str = "dev") -> s
     return f"[env={env}]\n{_cap(json.dumps(body, indent=2), _MAX_OUTPUT_CHARS)}"
 
 
-@mcp.tool()
 def get_commerce_component_logs(
     component: str,
     namespace: str = "commerce",
@@ -745,7 +749,7 @@ def get_commerce_component_logs(
     resolved to live pods by container name (see list_commerce_components
     for the component list; 'search-app' expands to both its repeater and
     slave pods). Up to 3 pods per component; tail_lines/since/previous are
-    passed through to the existing get_pod_logs() validation and caps
+    passed through to the existing get_pod_logs_impl() validation and caps
     (tail_lines max 1000). Each entry carries its release/release_group,
     restart_count/waiting_reason, and a log_coverage block
     (requested_tail_lines/lines_returned/tail_cap_hit) so truncation-
@@ -778,7 +782,6 @@ def get_commerce_component_logs(
     return f"[env={env}]\n{_cap(json.dumps(body, indent=2))}"
 
 
-@mcp.tool()
 def analyze_commerce_component_errors(
     component: str,
     namespace: str = "commerce",
@@ -843,7 +846,6 @@ def analyze_commerce_component_errors(
     return f"[env={env}]\n{_cap(json.dumps(body, indent=2))}"
 
 
-@mcp.tool()
 def correlate_commerce_errors(
     components: list[str],
     namespace: str = "commerce",
@@ -908,7 +910,6 @@ def correlate_commerce_errors(
     return f"[env={env}]\n{_cap(json.dumps(body, indent=2))}"
 
 
-@mcp.tool()
 def diagnose_commerce_issue(
     issue_description: str,
     namespace: str = "commerce",
@@ -1057,7 +1058,6 @@ def diagnose_commerce_issue(
     return f"[env={env}]\n{_cap(json.dumps(body, indent=2))}"
 
 
-@mcp.tool()
 def get_commerce_health(namespace: str = "commerce", env: str = "dev") -> str:
     """Read-only health snapshot for HCL Commerce: per-component pod status
     (phase breakdown, crash_looping/image_pull_backoff/pods_with_restarts
@@ -1120,7 +1120,6 @@ def get_commerce_health(namespace: str = "commerce", env: str = "dev") -> str:
     return f"[env={env}]\n{_cap(json.dumps(body, indent=2), _MAX_OUTPUT_CHARS)}"
 
 
-@mcp.tool()
 def correlate_commerce_timeline(
     components: list[str],
     namespace: str = "commerce",
@@ -1200,3 +1199,22 @@ def correlate_commerce_timeline(
         ),
     }
     return f"[env={env}]\n{_cap(json.dumps(body, indent=2))}"
+
+
+# --------------------------------------------------------------------------
+# Registration - called by commerce_server.py against its own MCPServer
+# instance. Deliberately not a module-level `mcp = MCPServer(...)` +
+# `@mcp.tool()` pattern: this module must stay importable without creating
+# or depending on any particular MCP server instance, so it can be unit
+# tested and reused without side effects on import.
+# --------------------------------------------------------------------------
+
+def register(mcp) -> None:
+    """Register exactly the 7 HCL Commerce diagnostic tools onto `mcp`."""
+    mcp.add_tool(list_commerce_components)
+    mcp.add_tool(get_commerce_component_logs)
+    mcp.add_tool(analyze_commerce_component_errors)
+    mcp.add_tool(correlate_commerce_errors)
+    mcp.add_tool(diagnose_commerce_issue)
+    mcp.add_tool(get_commerce_health)
+    mcp.add_tool(correlate_commerce_timeline)

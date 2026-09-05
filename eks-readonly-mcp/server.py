@@ -7,119 +7,42 @@ resource name and a validated namespace, then re-checked against a
 read-only allow-list in ssh_client.py before it is ever sent over SSH.
 
 Every tool takes an explicit env parameter ("dev" default, or "uat") that
-selects which pre-built SSH client handles the call - see _resolve_ssh().
+selects which pre-built SSH client handles the call - see kube_core._resolve_ssh().
 There is no global "current environment" state and no environment-switching
 tool; each call is self-contained and states its own target.
 
 Transport is stdio (Claude Desktop launches this process and talks MCP over
 stdin/stdout), so nothing but MCP protocol frames may ever go to stdout.
 All diagnostics go to stderr via the logging module.
+
+This server registers ONLY the 31 standard Kubernetes read-only tools. The
+7 HCL Commerce diagnostic tools live on their own MCP surface - see
+commerce_server.py - and are not imported or registered here.
 """
 from __future__ import annotations
 
 import json
 import logging
-import re
 import sys
 from typing import Optional
 
 from mcp.server.mcpserver import MCPServer
 
-from config import ConfigError, load_configs
-from ssh_client import (
-    BastionConnectionError,
-    BastionSSHClient,
-    CommandTimeoutError,
-    ReadOnlyViolation,
-)
-
-# Never touch stdout: it is reserved for MCP protocol frames.
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    stream=sys.stderr,
-)
-logger = logging.getLogger("eks-readonly-mcp")
-
-_NAMESPACE_PATTERN = re.compile(r"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$")
-_POD_NAME_PATTERN = re.compile(r"^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$")
-_CONTAINER_NAME_PATTERN = re.compile(r"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$")
-_DURATION_PATTERN = re.compile(r"^[1-9][0-9]*[smh]$")
-_MAX_OUTPUT_CHARS = 120_000
-_MAX_LOG_TAIL_LINES = 1000
-_DEFAULT_LOG_TAIL_LINES = 100
+from config import ConfigError
 
 try:
-    _configs = load_configs()
+    from kube_core import (
+        _DEFAULT_LOG_TAIL_LINES,
+        _run,
+        _scope_args,
+        get_pod_logs_impl,
+    )
 except ConfigError as exc:
-    logger.error("Configuration error: %s", exc)
     sys.exit(f"eks-readonly-mcp: configuration error: {exc}")
 
-_ssh_clients = {env_name: BastionSSHClient(cfg) for env_name, cfg in _configs.items()}
-
-# Environments this server can route to. Deliberately excludes "prod" for
-# now - it will be added here only in a separate, explicitly approved change.
-_ALLOWED_ENVS = ("dev", "uat")
-
-
-def _resolve_ssh(env: str) -> BastionSSHClient:
-    """Look up the SSH client for a validated environment name.
-
-    Raises ValueError for anything not in _ALLOWED_ENVS, or for an allowed
-    name that has no configuration loaded (e.g. 'uat' before its env vars
-    are set). Never falls back to a different environment.
-    """
-    key = (env or "").strip().lower()
-    if key not in _ALLOWED_ENVS:
-        raise ValueError(f"Invalid env {env!r}: must be one of {', '.join(_ALLOWED_ENVS)}.")
-    client = _ssh_clients.get(key)
-    if client is None:
-        raise ValueError(
-            f"Environment {key!r} is not configured on this server "
-            f"(no {key.upper()}_BASTION_* variables set)."
-        )
-    return client
-
+logger = logging.getLogger("eks-readonly-mcp")
 
 mcp = MCPServer("eks-readonly")
-
-
-def _validate_namespace(namespace: Optional[str]) -> Optional[str]:
-    """Return None for "all namespaces", or a validated namespace string.
-
-    Raises ValueError for anything that isn't a syntactically valid
-    Kubernetes namespace name (RFC 1123 DNS label).
-    """
-    if namespace is None:
-        return None
-    ns = namespace.strip()
-    if ns == "" or ns.lower() == "all":
-        return None
-    if not _NAMESPACE_PATTERN.match(ns):
-        raise ValueError(
-            f"Invalid namespace {namespace!r}: must be a valid Kubernetes namespace "
-            "name (lowercase alphanumeric and '-', max 63 chars), or omitted/'all'."
-        )
-    return ns
-
-
-def _scope_args(namespace: Optional[str]) -> str:
-    validated = _validate_namespace(namespace)
-    return "-A" if validated is None else f"-n {validated}"
-
-
-def _validate_required_namespace(namespace: str) -> str:
-    ns = _validate_namespace(namespace)
-    if ns is None:
-        raise ValueError("a specific namespace is required (not 'all').")
-    return ns
-
-
-def _validate_name(value: str, pattern: re.Pattern, label: str) -> str:
-    v = (value or "").strip()
-    if not v or not pattern.match(v):
-        raise ValueError(f"Invalid {label} {value!r}: must be a valid Kubernetes name.")
-    return v
 
 
 def _redact_secret(obj: dict) -> dict:
@@ -138,39 +61,6 @@ def _strip_secrets(raw: str, env: str) -> str:
     elif isinstance(payload, dict) and payload.get("kind") == "Secret":
         payload = _redact_secret(payload)
     return f"[env={env}]\n" + json.dumps(payload, indent=2)
-
-
-def _run(kubectl_command: str, env: str = "dev") -> str:
-    try:
-        ssh = _resolve_ssh(env)
-    except ValueError as exc:
-        return f"[env={env}] Error: {exc}"
-
-    try:
-        result = ssh.run_kubectl(kubectl_command)
-    except ReadOnlyViolation as exc:
-        logger.error("Blocked non-read-only command: %s", exc)
-        return f"[env={env}] Error: this request was blocked by the read-only guard ({exc})."
-    except BastionConnectionError as exc:
-        logger.error("Bastion connection failed: %s", exc)
-        return (
-            f"[env={env}] Error: could not connect to the bastion. Check that the VPN is "
-            f"connected and the bastion is reachable. Details: {exc}"
-        )
-    except CommandTimeoutError as exc:
-        logger.error("Command timed out: %s", exc)
-        return f"[env={env}] Error: {exc}"
-
-    if not result.ok:
-        logger.warning("kubectl exited %s for: %s", result.exit_code, result.command)
-        stderr = result.stderr.strip() or "(no stderr output)"
-        return f"[env={env}] Error: kubectl failed (exit {result.exit_code}): {stderr}"
-
-    output = result.stdout
-    if len(output) > _MAX_OUTPUT_CHARS:
-        output = output[:_MAX_OUTPUT_CHARS] + "\n...(output truncated)"
-    body = output or "(empty result - no matching resources)"
-    return f"[env={env}]\n{body}"
 
 
 @mcp.tool()
@@ -486,34 +376,20 @@ def get_pod_logs(
     If the pod has multiple containers, kubectl will report the valid container
     names in the error - pass one via `container`.
     env selects the target cluster: 'dev' (default) or 'uat'."""
-    try:
-        ns = _validate_required_namespace(namespace)
-        pod = _validate_name(pod, _POD_NAME_PATTERN, "pod name")
-        if container is not None:
-            container = _validate_name(container, _CONTAINER_NAME_PATTERN, "container name")
-        if since is not None and since.strip() and not _DURATION_PATTERN.match(since.strip()):
-            raise ValueError(f"invalid since {since!r}; use a duration like '10m', '2h', '30s'.")
-    except ValueError as exc:
-        return f"Error: {exc}"
+    return get_pod_logs_impl(
+        namespace=namespace,
+        pod=pod,
+        container=container,
+        tail_lines=tail_lines,
+        previous=previous,
+        since=since,
+        env=env,
+    )
 
-    try:
-        tail = max(1, min(int(tail_lines), _MAX_LOG_TAIL_LINES))
-    except (TypeError, ValueError):
-        return f"Error: tail_lines must be an integer, got {tail_lines!r}."
-
-    cmd = f"kubectl logs {pod} -n {ns} --tail={tail}"
-    if container:
-        cmd += f" -c {container}"
-    if previous:
-        cmd += " --previous"
-    if since and since.strip():
-        cmd += f" --since={since.strip()}"
-    return _run(cmd, env=env)
-
-
-import commerce_tools  # noqa: E402,F401 - registers the HCL Commerce diagnostic tools
 
 if __name__ == "__main__":
+    from kube_core import _configs
+
     logger.info(
         "Starting eks-readonly-mcp (environments configured: %s, k8s user=%s)",
         ", ".join(sorted(_configs)),
