@@ -43,6 +43,12 @@
       "args": [
         "D:\\AI-Agents-DevOps\\AI-Agent\\mcp-server.py"
       ]
+    },
+    "windows-ai-tools": {
+      "command": "D:\\git-code-repo-shahid\\Agentic-Ai\\Local-Laptop-ai-mcp\\.venv\\Scripts\\python.exe",
+      "args": [
+        "D:\\git-code-repo-shahid\\Agentic-Ai\\Local-Laptop-ai-mcp\\mcp-server.py"
+      ]
     }
   },
   "coworkUserFilesPath": "C:\\Users\\ShahidMalik\\Claude",

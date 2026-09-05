@@ -1,222 +1,99 @@
-from pathlib import Path
-import shutil
+"""
+Windows Laptop AI Tools - MCP server.
+
+Single entry point that registers every read-only Windows diagnostic tool
+with the MCP protocol. Tool implementations live in tools/ (one module per
+category); this file only wires them up as MCP tools.
+
+No destructive or state-changing capability is exposed: no delete, no
+format, no shutdown/reboot, no registry/firewall/user changes, no arbitrary
+shell execution, no service/process control. See README.md for the full
+tool catalog and security model.
+"""
 
 from mcp.server.fastmcp import FastMCP
 
+from tools import (
+    diagnostics,
+    disk_storage,
+    environment,
+    filesystem,
+    health,
+    network,
+    processes,
+    services,
+    system_info,
+)
 
-# Create MCP Server
-mcp = FastMCP("Windows AI Server")
-
-
-# =========================================================
-# TOOL 1 - LIST FOLDER
-# =========================================================
-
-@mcp.tool()
-def list_folder(folder_path: str = ".") -> str:
-    """
-    List files and folders inside a Windows folder.
-    """
-
-    try:
-        path = Path(folder_path).resolve()
-
-        if not path.exists():
-            return f"Path does not exist: {path}"
-
-        if not path.is_dir():
-            return f"This is not a folder: {path}"
-
-        items = []
-
-        for item in path.iterdir():
-
-            if item.is_dir():
-                items.append(f"[FOLDER] {item.name}")
-            else:
-                items.append(f"[FILE] {item.name}")
-
-        if not items:
-            return "Folder is empty."
-
-        return "\n".join(sorted(items))
-
-    except Exception as e:
-        return f"Error: {e}"
+mcp = FastMCP("Windows Laptop AI Tools")
 
 
-# =========================================================
-# TOOL 2 - FILE SIZE
-# =========================================================
+# ---------------------------------------------------------------------------
+# System Information
+# ---------------------------------------------------------------------------
+mcp.tool()(system_info.get_os_info)
+mcp.tool()(system_info.get_cpu_info)
+mcp.tool()(system_info.get_memory_info)
+mcp.tool()(system_info.get_uptime)
 
-@mcp.tool()
-def get_file_size(file_path: str) -> str:
-    """
-    Get the size of a file.
-    """
+# ---------------------------------------------------------------------------
+# Disk / Storage
+# ---------------------------------------------------------------------------
+mcp.tool()(disk_storage.list_drives)
+mcp.tool()(disk_storage.get_disk_usage)
+mcp.tool()(disk_storage.get_folder_size)
+mcp.tool()(disk_storage.count_items)
+mcp.tool()(disk_storage.find_large_files)
+mcp.tool()(disk_storage.search_files)
 
-    try:
-        path = Path(file_path).resolve()
+# ---------------------------------------------------------------------------
+# File System
+# ---------------------------------------------------------------------------
+mcp.tool()(filesystem.list_folder)
+mcp.tool()(filesystem.read_file)
+mcp.tool()(filesystem.file_exists)
+mcp.tool()(filesystem.get_file_metadata)
+mcp.tool()(filesystem.search_in_files)
 
-        if not path.exists():
-            return f"File does not exist: {path}"
+# ---------------------------------------------------------------------------
+# Processes
+# ---------------------------------------------------------------------------
+mcp.tool()(processes.list_processes)
+mcp.tool()(processes.find_process)
+mcp.tool()(processes.get_process_info)
 
-        if not path.is_file():
-            return f"This is not a file: {path}"
+# ---------------------------------------------------------------------------
+# Services
+# ---------------------------------------------------------------------------
+mcp.tool()(services.list_services)
+mcp.tool()(services.get_service_status)
 
-        size_bytes = path.stat().st_size
-        size_mb = size_bytes / (1024 * 1024)
+# ---------------------------------------------------------------------------
+# Network Diagnostics
+# ---------------------------------------------------------------------------
+mcp.tool()(network.get_network_info)
+mcp.tool()(network.get_dns_info)
+mcp.tool()(network.ping_host)
+mcp.tool()(network.check_port)
+mcp.tool()(network.get_routing_info)
 
-        return (
-            f"File: {path}\n"
-            f"Size: {size_bytes} bytes\n"
-            f"Size: {size_mb:.2f} MB"
-        )
+# ---------------------------------------------------------------------------
+# Environment
+# ---------------------------------------------------------------------------
+mcp.tool()(environment.get_environment_variables)
+mcp.tool()(environment.get_path_entries)
+mcp.tool()(environment.get_tool_versions)
 
-    except Exception as e:
-        return f"Error: {e}"
+# ---------------------------------------------------------------------------
+# Windows Diagnostics / Logs
+# ---------------------------------------------------------------------------
+mcp.tool()(diagnostics.get_recent_events)
 
+# ---------------------------------------------------------------------------
+# Laptop Health Monitoring
+# ---------------------------------------------------------------------------
+mcp.tool()(health.get_health_summary)
 
-# =========================================================
-# TOOL 3 - FOLDER SIZE
-# =========================================================
-
-@mcp.tool()
-def get_folder_size(folder_path: str) -> str:
-    """
-    Calculate the total size of a folder.
-    """
-
-    try:
-        path = Path(folder_path).resolve()
-
-        if not path.exists():
-            return f"Folder does not exist: {path}"
-
-        if not path.is_dir():
-            return f"This is not a folder: {path}"
-
-        total_size = 0
-        file_count = 0
-
-        for item in path.rglob("*"):
-
-            if item.is_file():
-
-                try:
-                    total_size += item.stat().st_size
-                    file_count += 1
-
-                except (PermissionError, OSError):
-                    pass
-
-        size_mb = total_size / (1024 * 1024)
-        size_gb = total_size / (1024 * 1024 * 1024)
-
-        return (
-            f"Folder: {path}\n"
-            f"Files: {file_count}\n"
-            f"Size: {size_mb:.2f} MB\n"
-            f"Size: {size_gb:.2f} GB"
-        )
-
-    except Exception as e:
-        return f"Error: {e}"
-
-
-# =========================================================
-# TOOL 4 - READ FILE
-# =========================================================
-
-@mcp.tool()
-def read_file(file_path: str) -> str:
-    """
-    Read a text file.
-    """
-
-    allowed_extensions = {
-        ".txt",
-        ".log",
-        ".json",
-        ".yaml",
-        ".yml",
-        ".py",
-        ".csv",
-        ".ini",
-        ".conf",
-        ".md",
-        ".xml",
-        ".html",
-        ".ps1"
-    }
-
-    try:
-
-        path = Path(file_path).resolve()
-
-        if not path.exists():
-            return f"File does not exist: {path}"
-
-        if not path.is_file():
-            return f"This is not a file: {path}"
-
-        if path.suffix.lower() not in allowed_extensions:
-            return (
-                f"File type {path.suffix} is not supported. "
-                "Only text files can be read."
-            )
-
-        content = path.read_text(
-            encoding="utf-8",
-            errors="replace"
-        )
-
-        # Prevent very large files being returned
-        # to the LLM.
-        if len(content) > 12000:
-
-            content = content[:12000]
-
-            content += "\n\n[File truncated]"
-
-        return f"File: {path}\n\n{content}"
-
-    except Exception as e:
-        return f"Error: {e}"
-
-
-# =========================================================
-# TOOL 5 - DISK USAGE
-# =========================================================
-
-@mcp.tool()
-def get_disk_usage(drive: str = "C:\\") -> str:
-    """
-    Show disk total, used and free space.
-    """
-
-    try:
-
-        total, used, free = shutil.disk_usage(drive)
-
-        total_gb = total / (1024 ** 3)
-        used_gb = used / (1024 ** 3)
-        free_gb = free / (1024 ** 3)
-
-        return (
-            f"Drive: {drive}\n"
-            f"Total: {total_gb:.2f} GB\n"
-            f"Used: {used_gb:.2f} GB\n"
-            f"Free: {free_gb:.2f} GB"
-        )
-
-    except Exception as e:
-        return f"Error: {e}"
-
-
-# =========================================================
-# START MCP SERVER
-# =========================================================
 
 if __name__ == "__main__":
     mcp.run()
