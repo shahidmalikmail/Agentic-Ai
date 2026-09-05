@@ -940,5 +940,179 @@ class GetCommerceHealthToolTests(unittest.TestCase):
         self.assertEqual(body["components"]["ts-app"]["release_group"], "obdevlive")
 
 
+class CorrelateCommerceTimelineToolTests(unittest.TestCase):
+    """Phase 4B new tool - correlate_commerce_errors()/diagnose_commerce_issue()
+    are exercised again here purely as regression checks (unchanged)."""
+
+    def _pods_fixture(self):
+        return {
+            "commerce": [
+                _pod_line("obdevlivets-app-a", "commerce", release="ob-dev-live",
+                          group="obdevlive", restarts="0", containers=("ts-app",)),
+                _pod_line("obdevlivecrs-app-a", "commerce", release="ob-dev-live",
+                          group="obdevlive", restarts="0", containers=("crs-app",)),
+            ],
+            "nginx": [], "redis": [],
+        }
+
+    def test_tool_registered_and_returns_expected_top_level_shape(self):
+        def get_pod_logs(namespace, pod, container=None, tail_lines=100,
+                          previous=False, since=None, env="dev"):
+            return f"[env={env}]\n2026-09-04T12:00:00Z ERROR timeout occurred"
+
+        with patch.object(ct, "_run", side_effect=_fake_run(self._pods_fixture())), \
+             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+            result = ct.correlate_commerce_timeline(components=["ts-app", "crs-app"], env="dev")
+        body = _body(result)
+        for key in ("components", "since", "window_seconds", "namespaces_checked",
+                    "fetch_errors", "timeline_entries_considered", "correlation_groups",
+                    "uncorrelated", "note"):
+            self.assertIn(key, body)
+        self.assertEqual(body["window_seconds"], 60)
+
+    def test_per_pod_classification_and_pod_attribution_preserved(self):
+        def get_pod_logs(namespace, pod, container=None, tail_lines=100,
+                          previous=False, since=None, env="dev"):
+            if pod == "obdevlivets-app-a":
+                return f"[env={env}]\n2026-09-04T12:00:00Z ERROR timeout occurred"
+            return f"[env={env}]\n2026-09-04T12:00:05Z ERROR connection refused"
+
+        with patch.object(ct, "_run", side_effect=_fake_run(self._pods_fixture())), \
+             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+            result = ct.correlate_commerce_timeline(components=["ts-app", "crs-app"], env="dev")
+        body = _body(result)
+        self.assertEqual(len(body["correlation_groups"]), 1)
+        group = body["correlation_groups"][0]
+        pods = {o["pod"] for o in group["observations"]}
+        self.assertEqual(pods, {"obdevlivets-app-a", "obdevlivecrs-app-a"})
+        self.assertEqual(sorted(group["components"]), ["crs-app", "ts-app"])
+
+    def test_release_and_release_group_preserved_in_observations(self):
+        def get_pod_logs(namespace, pod, container=None, tail_lines=100,
+                          previous=False, since=None, env="dev"):
+            return f"[env={env}]\n2026-09-04T12:00:00Z ERROR timeout occurred"
+
+        with patch.object(ct, "_run", side_effect=_fake_run(self._pods_fixture())), \
+             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+            result = ct.correlate_commerce_timeline(components=["ts-app"], env="dev")
+        body = _body(result)
+        obs = body["correlation_groups"][0]["observations"][0]
+        self.assertEqual(obs["release"], "ob-dev-live")
+        self.assertEqual(obs["release_group"], "obdevlive")
+
+    def test_event_integration(self):
+        events = {
+            "commerce": [
+                {"type": "Warning", "reason": "Killing", "message": "OOMKilled",
+                 "involvedObject": {"name": "obdevlivets-app-a"}, "count": 1,
+                 "lastTimestamp": "2026-09-04T12:00:02Z"},
+            ]
+        }
+
+        def get_pod_logs(namespace, pod, container=None, tail_lines=100,
+                          previous=False, since=None, env="dev"):
+            return f"[env={env}]\n2026-09-04T12:00:00Z ERROR timeout occurred"
+
+        with patch.object(ct, "_run", side_effect=_fake_run(self._pods_fixture(), events)), \
+             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+            result = ct.correlate_commerce_timeline(components=["ts-app"], env="dev")
+        body = _body(result)
+        sources = {o["source"] for g in body["correlation_groups"] for o in g["observations"]}
+        self.assertIn("event", sources)
+
+    def test_window_parameter_respected_and_returned(self):
+        def get_pod_logs(namespace, pod, container=None, tail_lines=100,
+                          previous=False, since=None, env="dev"):
+            return f"[env={env}]\n2026-09-04T12:00:00Z ERROR timeout occurred"
+
+        with patch.object(ct, "_run", side_effect=_fake_run(self._pods_fixture())), \
+             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+            result = ct.correlate_commerce_timeline(components=["ts-app"], window_seconds=120, env="dev")
+        body = _body(result)
+        self.assertEqual(body["window_seconds"], 120)
+
+    def test_window_parameter_clamped_to_max(self):
+        def get_pod_logs(namespace, pod, container=None, tail_lines=100,
+                          previous=False, since=None, env="dev"):
+            return f"[env={env}]\n2026-09-04T12:00:00Z ERROR timeout occurred"
+
+        with patch.object(ct, "_run", side_effect=_fake_run(self._pods_fixture())), \
+             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+            result = ct.correlate_commerce_timeline(components=["ts-app"], window_seconds=99999, env="dev")
+        body = _body(result)
+        self.assertEqual(body["window_seconds"], 3600)
+
+    def test_bounded_group_count(self):
+        pods = {"commerce": [_pod_line("obdevlivets-app-a", "commerce", restarts="0",
+                                        containers=("ts-app",))], "nginx": [], "redis": []}
+
+        # 24 lines across 3 categories (8 distinct messages each, so none
+        # hit the per-category evidence cap), each 5 minutes apart -
+        # guaranteed 24 singleton groups at the default 60s window, well
+        # beyond the 20-group cap.
+        templates = ["ERROR unique failure {i}", "Read timed out variant {i}", "Connection refused variant {i}"]
+        lines = []
+        for idx in range(24):
+            hour = 12 + (idx * 5) // 60
+            minute = (idx * 5) % 60
+            template = templates[idx % 3]
+            lines.append(f"2026-09-04T{hour:02d}:{minute:02d}:00Z " + template.format(i=idx))
+        log_text = "\n".join(lines)
+
+        def get_pod_logs(namespace, pod, container=None, tail_lines=100,
+                          previous=False, since=None, env="dev"):
+            return f"[env={env}]\n{log_text}"
+
+        with patch.object(ct, "_run", side_effect=_fake_run(pods)), \
+             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+            result = ct.correlate_commerce_timeline(components=["ts-app"], env="dev")
+        body = _body(result)
+        self.assertEqual(len(body["correlation_groups"]), ct._MAX_CORRELATION_GROUPS + 1)
+        self.assertIn("note", body["correlation_groups"][-1])
+
+    def test_empty_components_list_errors(self):
+        result = ct.correlate_commerce_timeline(components=[], env="dev")
+        self.assertTrue(result.startswith("Error:"))
+
+    def test_unknown_component_errors(self):
+        result = ct.correlate_commerce_timeline(components=["not-a-real-component"], env="dev")
+        self.assertTrue(result.startswith("Error:"))
+
+    def test_correlate_commerce_errors_unchanged_regression(self):
+        pods = {
+            "commerce": [
+                _pod_line("obdevlivets-app-a", "commerce", restarts="0", containers=("ts-app",)),
+                _pod_line("obdevlivecrs-app-a", "commerce", restarts="0", containers=("crs-app",)),
+            ]
+        }
+
+        def get_pod_logs(namespace, pod, container=None, tail_lines=100,
+                          previous=False, since=None, env="dev"):
+            return f"[env={env}]\nRead timed out"
+
+        with patch.object(ct, "_run", side_effect=_fake_run(pods)), \
+             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+            result = ct.correlate_commerce_errors(components=["ts-app", "crs-app"], env="dev")
+        body = _body(result)
+        self.assertIn("timeout", body["co_occurring_categories"])
+        self.assertIn("top_findings", body["components"]["ts-app"])
+        self.assertNotIn("correlation_groups", body)
+
+    def test_diagnose_commerce_issue_unchanged_regression(self):
+        pods = {"commerce": [_pod_line("obdevlivets-app-a", "commerce", restarts="0", containers=("ts-app",))]}
+
+        def get_pod_logs(namespace, pod, container=None, tail_lines=100,
+                          previous=False, since=None, env="dev"):
+            return f"[env={env}]\nINFO fine"
+
+        with patch.object(ct, "_run", side_effect=_fake_run(pods)), \
+             patch.object(ct, "get_pod_logs", side_effect=get_pod_logs):
+            result = ct.diagnose_commerce_issue(issue_description="test", components=["ts-app"], env="dev")
+        body = _body(result)
+        self.assertIn("likely_cause", body)
+        self.assertIn("confidence", body)
+        self.assertNotIn("correlation_groups", body)
+
+
 if __name__ == "__main__":
     unittest.main()

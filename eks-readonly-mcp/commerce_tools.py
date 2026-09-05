@@ -27,6 +27,7 @@ import json
 from datetime import timezone
 from typing import Optional
 
+import commerce_correlation
 import commerce_knowledge
 import commerce_log_analyzer
 import commerce_mapping
@@ -42,6 +43,13 @@ _MAX_PODS_PER_COMPONENT = 3
 _MAX_LOG_CHARS_PER_POD = 20_000
 _MAX_AGGREGATE_CHARS = 100_000
 _MAX_EVENTS_CLASSIFIED = 30
+
+# Phase 4B: separate from _MAX_EVENTS_CLASSIFIED - bounds the number of
+# CorrelationGroups returned by correlate_commerce_timeline(), not the
+# number of observations within one group (that cap lives in
+# commerce_correlation._MAX_OBSERVATIONS_PER_GROUP, since it's intrinsic
+# to what a CorrelationGroup's evidence_count-vs-observations means).
+_MAX_CORRELATION_GROUPS = 20
 
 _DEFAULT_DIAGNOSIS_COMPONENTS = ("ts-app", "crs-app", "ts-web", "store-web")
 
@@ -598,6 +606,71 @@ def assemble_timeline(
 
 
 # --------------------------------------------------------------------------
+# Phase 4B: per-pod log_entries adapter for assemble_timeline()/
+# correlate_timeline(). Deliberately SEPARATE from correlate_commerce_errors'
+# combined-text-per-component path above, which is left completely
+# unchanged - this adapter classifies each pod's log text on its OWN
+# (via classify_log_text), preserving per-pod/per-release attribution,
+# because assemble_timeline() expects one log_entries dict per pod/
+# log_source, not one per component. Reuses _collect_component_logs() and
+# classify_log_text() unchanged; introduces no new kubectl command.
+# --------------------------------------------------------------------------
+
+def _build_per_pod_log_entries(
+    components: list[str], default_namespace: str, tail_lines: int, since: Optional[str], env: str
+) -> tuple[list[dict], list[str]]:
+    """For every matched pod of every requested component, fetch its
+    logs (current, plus previous if restarted - same as
+    analyze_commerce_component_errors/diagnose_commerce_issue) and
+    classify that pod's OWN log text independently. Returns
+    (log_entries, fetch_errors) where log_entries is directly consumable
+    by assemble_timeline()'s `log_entries` parameter - each entry keeps
+    component/leaf_component/release/release_group/pod/container/
+    log_source/namespace so no pod attribution is lost."""
+    log_entries: list[dict] = []
+    fetch_errors: list[str] = []
+    for component in components:
+        entries, errors, _total_pods = _collect_component_logs(
+            component, default_namespace, tail_lines, since, False, env, auto_previous_on_restart=True
+        )
+        fetch_errors.extend(errors)
+        for entry in entries:
+            analysis = commerce_log_analyzer.classify_log_text(entry["log"])
+            log_entries.append(
+                {
+                    "component": component,
+                    "leaf_component": entry["leaf_component"],
+                    "release": entry["release"],
+                    "release_group": entry["release_group"],
+                    "pod": entry["pod"],
+                    "container": entry["container"],
+                    "log_source": entry["log_source"],
+                    "namespace": entry["namespace"],
+                    "findings": analysis.findings,
+                }
+            )
+    return log_entries, fetch_errors
+
+
+def _correlation_group_to_dict(group: commerce_correlation.CorrelationGroup) -> dict:
+    return {
+        "group_id": group.group_id,
+        "temporal_comparability": group.temporal_comparability,
+        "start_timestamp": group.start_timestamp,
+        "end_timestamp": group.end_timestamp,
+        "duration_seconds": group.duration_seconds,
+        "evidence_count": group.evidence_count,
+        "components": group.components,
+        "pods": group.pods,
+        "releases": group.releases,
+        "categories": group.categories,
+        "severities": group.severities,
+        "sources": group.sources,
+        "observations": group.observations,
+    }
+
+
+# --------------------------------------------------------------------------
 # Tools
 # --------------------------------------------------------------------------
 
@@ -1045,3 +1118,85 @@ def get_commerce_health(namespace: str = "commerce", env: str = "dev") -> str:
         "events_classified": events_classified,
     }
     return f"[env={env}]\n{_cap(json.dumps(body, indent=2), _MAX_OUTPUT_CHARS)}"
+
+
+@mcp.tool()
+def correlate_commerce_timeline(
+    components: list[str],
+    namespace: str = "commerce",
+    tail_lines: int = 200,
+    since: Optional[str] = None,
+    window_seconds: int = commerce_correlation.DEFAULT_WINDOW_SECONDS,
+    env: str = "dev",
+) -> str:
+    """Phase 4B: group already-collected, already-classified evidence
+    (per-pod logs + classified Warning events, fetched via the SAME
+    read-only path as the other commerce tools) into groups of
+    observations that occurred within `window_seconds` of each other.
+
+    CORRELATION IS NOT CAUSATION: a group means only "these observations
+    happened close together in time" - it never claims or implies that
+    one component's errors caused another's. That judgment is left to a
+    human or a later, explicitly separate diagnosis phase - this tool
+    collects and organizes evidence only.
+
+    Unlike correlate_commerce_errors() (whole-tail-window co-occurrence
+    per component, unchanged by this tool), each pod's log is classified
+    independently here so per-pod/per-release attribution survives into
+    every observation. Grouping is by parsed timestamp proximity alone -
+    never by component identity or any assumed dependency; no component
+    dependency graph exists or is inferred anywhere in this tool.
+
+    Timestamps are compared only within the same comparability tier -
+    absolute-with-known-timezone, absolute-with-unknown-timezone, and
+    time-only (no date) are NEVER mixed with each other. Observations
+    with no usable timestamp are preserved separately under
+    "uncorrelated", never dropped and never assigned a fabricated time.
+
+    window_seconds is clamped to [1, 3600] and the value actually used is
+    always returned as "window_seconds" in the response - 60s is a
+    reasonable starting default, not a validated causal/incident
+    constant. env selects 'dev' (default) or 'uat'."""
+    try:
+        ns = _validate_required_namespace(namespace)
+        norm_components = [commerce_mapping.normalize_component(c) for c in (components or [])]
+    except ValueError as exc:
+        return f"Error: {exc}"
+    if not norm_components:
+        return "Error: components must be a non-empty list of known component names."
+
+    log_entries, log_fetch_errors = _build_per_pod_log_entries(norm_components, ns, tail_lines, since, env)
+
+    scope_namespaces = sorted(
+        {ns} | {commerce_mapping.resolve_namespace(c, ns) for c in norm_components}
+    )
+    events_classified, event_fetch_errors = _classify_warning_events(scope_namespaces, env)
+
+    timeline = assemble_timeline(log_entries, events_classified)
+    groups, uncorrelated, resolved_window = commerce_correlation.correlate_timeline(
+        timeline, window_seconds=window_seconds
+    )
+
+    truncated = len(groups) > _MAX_CORRELATION_GROUPS
+    groups_out = [_correlation_group_to_dict(g) for g in groups[:_MAX_CORRELATION_GROUPS]]
+    if truncated:
+        groups_out.append(
+            {"note": f"...additional correlation groups omitted, capped at {_MAX_CORRELATION_GROUPS}"}
+        )
+
+    body = {
+        "components": norm_components,
+        "since": since,
+        "window_seconds": resolved_window,
+        "namespaces_checked": scope_namespaces,
+        "fetch_errors": log_fetch_errors + event_fetch_errors,
+        "timeline_entries_considered": len(timeline),
+        "correlation_groups": groups_out,
+        "uncorrelated": uncorrelated,
+        "note": (
+            "Temporal proximity only - groups reflect observations that occurred close "
+            "together in time. This is NOT a causal claim: it does not assert that any "
+            "component caused another's errors."
+        ),
+    }
+    return f"[env={env}]\n{_cap(json.dumps(body, indent=2))}"
