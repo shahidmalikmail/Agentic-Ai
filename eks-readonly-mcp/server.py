@@ -511,6 +511,8 @@ def get_pod_logs(
     return _run(cmd, env=env)
 
 
+import commerce_tools  # noqa: E402,F401 - registers the HCL Commerce diagnostic tools
+
 if __name__ == "__main__":
     logger.info(
         "Starting eks-readonly-mcp (environments configured: %s, k8s user=%s)",
