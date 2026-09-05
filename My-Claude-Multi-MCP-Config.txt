@@ -1,7 +1,71 @@
 {
+  "mcpServers": {
+    "eks-readonly": {
+      "command": "D:\\git-code-repo-shahid\\Agentic-Ai\\eks-readonly-mcp\\venv\\Scripts\\python.exe",
+      "args": [
+        "D:\\git-code-repo-shahid\\Agentic-Ai\\eks-readonly-mcp\\server.py"
+      ],
+      "env": {
+        "DEV_BASTION_HOST": "10.11.80.131",
+        "DEV_BASTION_PORT": "22",
+        "DEV_BASTION_USER": "ubuntu",
+        "DEV_BASTION_KEY_PATH": "D:\\Solveda-Data-OnDrive-10-oct-25\\OneDrive - SAKSOFT LIMITED\\Office Brands Project\\OB-AWS-Pem-Key\\ob-aws-key-for-9-1-11-0\\ob-dev-bastion-9-1-11-0.pem",
+        "UAT_BASTION_HOST": "10.12.80.197",
+        "UAT_BASTION_PORT": "22",
+        "UAT_BASTION_USER": "ubuntu",
+        "UAT_BASTION_KEY_PATH": "D:\\Solveda-Data-OnDrive-10-oct-25\\OneDrive - SAKSOFT LIMITED\\Office Brands Project\\OB-AWS-Pem-Key\\ob-aws-key-for-9-1-11-0\\ob-uat-bastion.pem",
+        "KUBERNETES_USER": "solveda",
+        "SSH_TIMEOUT": "15",
+        "COMMAND_TIMEOUT": "30"
+      }
+    },
+    "eks-commerce": {
+      "command": "D:\\git-code-repo-shahid\\Agentic-Ai\\eks-readonly-mcp\\venv\\Scripts\\python.exe",
+      "args": [
+        "D:\\git-code-repo-shahid\\Agentic-Ai\\eks-readonly-mcp\\commerce_server.py"
+      ],
+      "env": {
+        "DEV_BASTION_HOST": "10.11.80.131",
+        "DEV_BASTION_PORT": "22",
+        "DEV_BASTION_USER": "ubuntu",
+        "DEV_BASTION_KEY_PATH": "D:\\Solveda-Data-OnDrive-10-oct-25\\OneDrive - SAKSOFT LIMITED\\Office Brands Project\\OB-AWS-Pem-Key\\ob-aws-key-for-9-1-11-0\\ob-dev-bastion-9-1-11-0.pem",
+        "UAT_BASTION_HOST": "10.12.80.197",
+        "UAT_BASTION_PORT": "22",
+        "UAT_BASTION_USER": "ubuntu",
+        "UAT_BASTION_KEY_PATH": "D:\\Solveda-Data-OnDrive-10-oct-25\\OneDrive - SAKSOFT LIMITED\\Office Brands Project\\OB-AWS-Pem-Key\\ob-aws-key-for-9-1-11-0\\ob-uat-bastion.pem",
+        "KUBERNETES_USER": "solveda",
+        "SSH_TIMEOUT": "15",
+        "COMMAND_TIMEOUT": "30"
+      }
+    },
+    "windows-ai": {
+      "command": "D:\\AI-Agents-DevOps\\venv\\Scripts\\python.exe",
+      "args": [
+        "D:\\AI-Agents-DevOps\\AI-Agent\\mcp-server.py"
+      ]
+    }
+  },
+  "coworkUserFilesPath": "C:\\Users\\ShahidMalik\\Claude",
   "preferences": {
+    "coworkBrowserToolsEnabled": true,
+    "coworkPreferredBrowser": "built_in",
     "launchPreviewPersistedWorkspaces": [],
     "launchPreviewSessionScopedSessions": [],
+    "coworkLegacyRootGrantsPruned": true,
+    "coworkScheduledTasksEnabled": true,
+    "coworkHipaaRestricted": false,
+    "orgWorkAcrossAppsDisabled": false,
+    "ccdScheduledTasksEnabled": true,
+    "hybridDetectLatched": true,
+    "earlyWindowShowLatched": true,
+    "sidebarMode": "chat",
+    "bypassPermissionsGateByAccount": {
+      "7791e800-8cbb-4b20-b383-bd4ba35adbce": false
+    },
+    "coworkWebSearchEnabled": true,
+    "coworkModelAutoFallbackByAccount": {
+      "7791e800-8cbb-4b20-b383-bd4ba35adbce": true
+    },
     "remoteToolsDeviceName": "desktop-6v33crk",
     "epitaxyPrefs": {
       "desktop-frame.paneStore.v1": {
@@ -28,44 +92,6 @@
         "version": 0
       }
     },
-    "coworkScheduledTasksEnabled": true,
-    "ccdScheduledTasksEnabled": true,
-    "coworkHipaaRestricted": false,
-    "orgWorkAcrossAppsDisabled": false,
-    "coworkWebSearchEnabled": true,
-    "coworkBrowserToolsEnabled": true,
-    "coworkPreferredBrowser": "built_in",
-    "coworkModelAutoFallbackByAccount": {
-      "7791e800-8cbb-4b20-b383-bd4ba35adbce": true
-    },
-    "bypassPermissionsGateByAccount": {
-      "7791e800-8cbb-4b20-b383-bd4ba35adbce": false
-    }
-  },
-
-  "coworkUserFilesPath": "C:\\Users\\ShahidMalik\\Claude",
-
-  "mcpServers": {
-    "eks-readonly": {
-      "command": "D:\\git-code-repo-shahid\\Agentic-Ai\\eks-readonly-mcp\\venv\\Scripts\\python.exe",
-      "args": [
-        "D:\\git-code-repo-shahid\\Agentic-Ai\\eks-readonly-mcp\\server.py"
-      ],
-      "env": {
-        "BASTION_HOST": "10.11.80.131",
-        "BASTION_PORT": "22",
-        "BASTION_USER": "ubuntu",
-        "BASTION_KEY_PATH": "D:\\Solveda-Data-OnDrive-10-oct-25\\OneDrive - SAKSOFT LIMITED\\Office Brands Project\\OB-AWS-Pem-Key\\ob-aws-key-for-9-1-11-0\\ob-dev-bastion-9-1-11-0.pem",
-        "KUBERNETES_USER": "solveda",
-        "SSH_TIMEOUT": "15",
-        "COMMAND_TIMEOUT": "30"
-      }
-    },
-	    "windows-ai": {
-      "command": "D:\\AI-Agents-DevOps\\venv\\Scripts\\python.exe",
-      "args": [
-        "D:\\AI-Agents-DevOps\\AI-Agent\\mcp-server.py"
-      ]
-    }
+    "chromeExtensionEnabled": true
   }
 }
