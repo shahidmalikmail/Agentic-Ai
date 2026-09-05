@@ -38,12 +38,6 @@
         "COMMAND_TIMEOUT": "30"
       }
     },
-    "windows-ai": {
-      "command": "D:\\AI-Agents-DevOps\\venv\\Scripts\\python.exe",
-      "args": [
-        "D:\\AI-Agents-DevOps\\AI-Agent\\mcp-server.py"
-      ]
-    },
     "windows-ai-tools": {
       "command": "D:\\git-code-repo-shahid\\Agentic-Ai\\Local-Laptop-ai-mcp\\.venv\\Scripts\\python.exe",
       "args": [
