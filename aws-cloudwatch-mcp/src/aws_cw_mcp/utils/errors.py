@@ -113,3 +113,37 @@ def describe_exception(exc: BaseException) -> ErrorInfo:
         return ErrorInfo("aws_error", type(exc).__name__, sanitize_text(str(exc), 400))
     return ErrorInfo("internal_error", type(exc).__name__,
                      "Unexpected internal error; details are in the server's stderr log.")
+
+
+# ---- Phase 2A (Logs Insights) error kinds ------------------------------------------------
+class QueryRejected(ToolError):
+    """A plan or rendered query failed validation. Messages name the rule, never echo unsafe text."""
+    kind = "query_rejected"
+
+
+class CostGuardError(ToolError):
+    kind = "cost_guard"
+
+
+class ConcurrencyLimit(ToolError):
+    kind = "concurrency_limit"
+
+
+class QueryTimeout(ToolError):
+    kind = "query_timeout"
+
+
+class QueryFailed(ToolError):
+    kind = "query_failed"
+
+
+class InsightsDisabled(ToolError):
+    kind = "insights_disabled"
+
+
+class IdentityConflict(ToolError):
+    kind = "identity_conflict"
+
+
+class NotFoundError(ToolError):
+    kind = "not_found"

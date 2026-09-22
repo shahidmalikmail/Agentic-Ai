@@ -43,10 +43,41 @@
       "args": [
         "D:\\git-code-repo-shahid\\Agentic-Ai\\Local-Laptop-ai-mcp\\mcp-server.py"
       ]
+    },
+    "eks-prod-readonly": {
+      "command": "D:\\git-code-repo-shahid\\Agentic-Ai\\eks-readonly-mcp\\venv\\Scripts\\python.exe",
+      "args": [
+        "D:\\git-code-repo-shahid\\Agentic-Ai\\eks-readonly-mcp\\prod_server.py"
+      ],
+      "env": {
+        "PROD_BASTION_HOST": "10.13.96.105",
+        "PROD_BASTION_PORT": "22",
+        "PROD_BASTION_USER": "ubuntu",
+        "PROD_BASTION_KEY_PATH": "D:\\Solveda-Data-OnDrive-10-oct-25\\OneDrive - SAKSOFT LIMITED\\Office Brands Project\\OB-AWS-Pem-Key\\ob-aws-key-for-9-1-11-0\\prod-bastion-9-1-11.pem",
+        "KUBERNETES_USER": "solveda",
+        "SSH_TIMEOUT": "15",
+        "COMMAND_TIMEOUT": "30"
+      }
+    },
+    "eks-prod-commerce": {
+      "command": "D:\\git-code-repo-shahid\\Agentic-Ai\\eks-readonly-mcp\\venv\\Scripts\\python.exe",
+      "args": [
+        "D:\\git-code-repo-shahid\\Agentic-Ai\\eks-readonly-mcp\\prod_commerce_server.py"
+      ],
+      "env": {
+        "PROD_BASTION_HOST": "10.13.96.105",
+        "PROD_BASTION_PORT": "22",
+        "PROD_BASTION_USER": "ubuntu",
+        "PROD_BASTION_KEY_PATH": "D:\\Solveda-Data-OnDrive-10-oct-25\\OneDrive - SAKSOFT LIMITED\\Office Brands Project\\OB-AWS-Pem-Key\\ob-aws-key-for-9-1-11-0\\prod-bastion-9-1-11.pem",
+        "KUBERNETES_USER": "solveda",
+        "SSH_TIMEOUT": "15",
+        "COMMAND_TIMEOUT": "30"
+      }
     }
   },
   "coworkUserFilesPath": "C:\\Users\\ShahidMalik\\Claude",
   "preferences": {
+    "chromeExtensionEnabled": true,
     "coworkBrowserToolsEnabled": true,
     "coworkPreferredBrowser": "built_in",
     "launchPreviewPersistedWorkspaces": [],
@@ -56,8 +87,8 @@
     "coworkHipaaRestricted": false,
     "orgWorkAcrossAppsDisabled": false,
     "ccdScheduledTasksEnabled": true,
-    "hybridDetectLatched": true,
     "earlyWindowShowLatched": true,
+    "storeReadCacheLatched": true,
     "sidebarMode": "chat",
     "bypassPermissionsGateByAccount": {
       "7791e800-8cbb-4b20-b383-bd4ba35adbce": false
@@ -73,7 +104,8 @@
           "extraPanesByMode": {},
           "colWeightsByMode": {},
           "rowSplit": 0.5,
-          "draftNonce": 0
+          "draftNonce": 0,
+          "lastPrimaryCodeSession": null
         },
         "version": 4
       },
@@ -92,6 +124,10 @@
         "version": 0
       }
     },
-    "chromeExtensionEnabled": true
+    "remoteSessionFolderGrants": {
+      "session_01Q1BTZGmduy1BbKVZiELwnu": [
+        "C:\\Users\\ShahidMalik\\Downloads\\Haniya"
+      ]
+    }
   }
 }

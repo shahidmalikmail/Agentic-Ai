@@ -93,6 +93,10 @@ def test_source_has_no_unsafe_constructs():
         for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if line.strip().startswith("#"):
                 continue
+            # The Insights gate module is the ONLY place allowed to call these two boto methods
+            # (guarded by InsightsGate; see tests/test_insights_gate.py). Nothing else is exempt.
+            if path.name == "insights_client.py" and re.search(r"\.(start_query|stop_query)\(", line):
+                continue
             if bad.search(line):
                 offenders.append(f"{path.name}:{n}: {line.strip()}")
     assert not offenders, offenders

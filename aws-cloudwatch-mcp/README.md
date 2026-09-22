@@ -84,6 +84,80 @@ Edit `%APPDATA%\Claude\claude_desktop_config.json`:
 Fully quit and restart Claude Desktop (system tray), then ask: "Run aws_health_check". Server logs go to stderr
 (Claude Desktop's MCP log file); stdout carries only MCP protocol frames.
 
+## Phase 2A: CloudWatch Logs Insights (optional, OFF by default)
+
+**Status: implemented and unit-tested with mocks; not yet validated against real AWS.** With `INSIGHTS_ENABLED`
+unset/false the server is exactly Phase 1: no Insights code path is built and no Insights tool is registered.
+
+Insights aggregates on the AWS side so Claude can answer "how many / when / where" questions without downloading
+raw logs. It uses a **dedicated identity and profile** (`ob-aws-cloudwatch-insights`, IAM user
+`cloud-watch-insights-review`) with exactly `logs:StartQuery`, `logs:GetQueryResults`, `logs:StopQuery`
+(`docs/PHASE-2A-IAM-POLICY-PROPOSED.json`, `docs/PHASE-2A-IAM-APPLY-GUIDE.md`). AWS classes StartQuery/StopQuery as
+**Write** actions: the model is "read-only access to application/infrastructure data through tightly constrained
+Logs Insights query jobs", and queries are billed by data scanned.
+
+| Tool | Purpose |
+|---|---|
+| `aws_insights_estimate_scan` | Estimate scan size (`\| estimate`), verdict vs caps; never runs the real query |
+| `aws_insights_count_over_time` | Matches per time bin: trend, first/peak bins |
+| `aws_insights_count_by` | Matches by log group / log stream / status code |
+| `aws_insights_sample_events` | A few (max 20) recent matching events; sanitized, **untrusted** |
+| `aws_insights_get_results` | Continue a query that outlived the wait budget (opaque `query_handle`) |
+| `aws_insights_cancel_query` | Cancel a query this server started |
+| `aws_insights_budget_status` | Limits, scan budget used/remaining, running jobs (local state, no AWS call) |
+
+**Safety model (all enforced in code and tests):** no tool accepts a query string, AWS action, regex or raw query id.
+Claude names a preset (`errors`, `exceptions`, `timeouts`, `connection_problems`, `http_4xx`, `http_5xx`, `oom`,
+`auth_failures`, `tls_errors`, `dns_errors`), up to 3 literal terms and status codes; the server renders the query from
+vetted templates and validates every stage against an allow-list (`SOURCE`, `join`, `lookup`, `subqueries`,
+`appendcols`, `cidrlookup`, `unmask`, SQL and PPL are blocked). A boto-level gate refuses any `StartQuery` the validator
+did not approve (single use), any operation other than the three, and any `queryId` this process did not start.
+Every query is preceded by a `| estimate` run and **fails closed** if no unambiguous estimate exists; per-query
+(2 GiB) and per-process (20 GiB) scan budgets, 2 concurrent queries, rate limits, a circuit breaker, a 40 s wait then a
+handle, and a 180 s application deadline with `StopQuery`. `StartQuery` is made with exactly one attempt and is never
+retried after a timeout (no idempotency token: a retry could create a duplicate billed query).
+
+Enable it by adding names only (no secrets) to the Claude Desktop `env`, then restart Claude Desktop. **Intended
+configuration** (same AWS account and, currently, the same region for both phases; separate variables keep the regions
+independently configurable):
+
+```json
+"env": {
+  "AWS_PROFILE": "ob-aws-cloudwatch",
+  "AWS_REGION": "us-east-1",
+  "AWS_INSIGHTS_PROFILE": "ob-aws-cloudwatch-insights",
+  "AWS_INSIGHTS_REGION": "us-east-1",
+  "AWS_ACCOUNT_ID": "926266574832",
+  "INSIGHTS_ENABLED": "true"
+}
+```
+
+**Regions.** `AWS_REGION` (Phase 1: logs, metrics, alarms) is `us-east-1` and is never changed by Insights.
+`AWS_INSIGHTS_REGION` selects the region used for Logs Insights (`StartQuery`/`GetQueryResults`/`StopQuery`) and for the
+log-group existence/retention lookup that precedes a query. **It is set to `us-east-1`, because that is where the PROD
+CloudWatch log groups actually are:** all eight (`/aws/internet-monitor/Prod-CDN-Traffic/{byCity,byCountry,byMetro,bySubdivision}`,
+`aws-CDN-prod-main-log`, `aws-CDN-prod-ts-app-log`, `aws-waf-logs-prod`, `aws-waf-logs-prod-91-ts-app`) were confirmed in
+`us-east-1`, and none exist in `ap-southeast-1` (the application/environment being associated with another region does not
+matter for Logs Insights: the region must be the one that holds the log groups). The variable is kept as a separate
+setting so a different region can be used in future; if it is unset it follows `AWS_REGION`. Both phases use the **same
+account**; the pin `AWS_ACCOUNT_ID=926266574832` is enforced for both, and the Insights identity must remain a different
+principal from Phase 1. The lookup uses the Phase 1 *profile* with the Insights *region*; with both set to `us-east-1`
+it simply reuses Phase 1's log-group service. Phase 1 IAM and behaviour are not modified by this project.
+
+**Estimate query handling (fixed after real-AWS validation step V2).** An estimate runs the same query plus a trailing
+`| estimate`, which must be the *final* command. AWS applies the API `limit` parameter as a trailing stage, so sending
+`limit` with an estimate produced `MalformedQueryException: unexpected symbol found limit`. Estimate requests are now sent
+**without** an API `limit`; real queries still carry their bounded `limit`. The boto gate enforces both shapes.
+
+`aws_health_check` then also reports the Insights identity (STS only; no query). It must resolve to account
+`926266574832` **and** to a different principal than the Phase 1 profile, otherwise Insights refuses to run (Phase 1
+keeps working). Limits and their hard ceilings are listed in `.env.example`.
+
+**Known limitations:** matching is regex/substring on `@message` (approximate, especially for unstructured text);
+literal terms cannot contain `/`, `"` or `\`; the per-process budget resets on restart; an empty result never proves
+health; `estimate` result shape, exact query syntax and time units are confirmed only in real-AWS validation (the
+parser fails closed until then); log-group IAM scoping is not applied yet (Q2, see `docs/PHASE-2A-IAM-DESIGN.md`).
+
 ## Result format
 
 Every tool returns JSON with the same envelope so facts, calculations and advice never blur:

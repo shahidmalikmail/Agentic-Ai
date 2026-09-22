@@ -36,11 +36,11 @@ def guarded(name: str, fn: Callable) -> Callable:
     return wrapper
 
 
-def register(mcp, tools: dict) -> None:
+def register(mcp, tools: dict, *, idempotent: bool = True) -> None:
     """Register plain tool functions on an MCPServer with read-only annotations."""
     from mcp.types import ToolAnnotations
 
-    ann = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True,
+    ann = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=idempotent,
                           openWorldHint=False)
     for name, fn in tools.items():
         mcp.tool(name=name, annotations=ann)(fn)

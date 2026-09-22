@@ -54,6 +54,21 @@ def _guard(model, **kwargs) -> None:
     assert_read_only(model.name)
 
 
+def make_boto_config(config: Config, *, max_attempts: Optional[int] = None,
+                     mode: str = "adaptive", region: Optional[str] = None) -> BotoConfig:
+    """Shared botocore Config (timeouts, retries, user agent) for every client we build.
+
+    NOTE: botocore's `max_attempts` counts RETRIES after the first try (total attempts = max_attempts + 1).
+    Pass max_attempts=0 for a client that must make exactly one attempt (Insights StartQuery)."""
+    return BotoConfig(
+        region_name=region or config.aws_region,
+        retries={"mode": mode, "max_attempts": config.api_max_attempts if max_attempts is None else max_attempts},
+        connect_timeout=config.api_connect_timeout,
+        read_timeout=config.api_read_timeout,
+        user_agent_extra="aws-cloudwatch-mcp/readonly",
+    )
+
+
 class AwsClients:
     """Lazily creates guarded boto3 clients from the default credential chain."""
 
@@ -72,14 +87,7 @@ class AwsClients:
         return self._session
 
     def _build(self, service: str):
-        cfg = BotoConfig(
-            region_name=self._config.aws_region,
-            retries={"mode": "adaptive", "max_attempts": self._config.api_max_attempts},
-            connect_timeout=self._config.api_connect_timeout,
-            read_timeout=self._config.api_read_timeout,
-            user_agent_extra="aws-cloudwatch-mcp/readonly",
-        )
-        client = self._get_session().client(service, config=cfg)
+        client = self._get_session().client(service, config=make_boto_config(self._config))
         client.meta.events.register("before-call.*.*", _guard)
         return client
 

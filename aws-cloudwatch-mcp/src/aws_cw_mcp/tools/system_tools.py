@@ -8,6 +8,22 @@ from aws_cw_mcp.runtime import Runtime
 from aws_cw_mcp.tools.base import guarded
 
 
+def _insights_status(rt: Runtime) -> dict:
+    """Identity check of the dedicated Insights profile (sts:GetCallerIdentity only; no query is run)."""
+    from aws_cw_mcp.aws.insights_client import INSIGHTS_OPERATIONS
+    from aws_cw_mcp.utils.errors import describe_exception
+    cfg = rt.config
+    base = {"enabled": True, "profile": cfg.insights_profile, "region": cfg.insights_effective_region,
+            "phase1_region": cfg.aws_region}
+    try:
+        ident = rt.insights_clients.verify()
+    except Exception as exc:  # noqa: BLE001 - reported, never fatal for the Phase 1 health check
+        return {**base, "verified": False, "error": describe_exception(exc).as_dict()}
+    return {**base, "verified": True, "account": ident.get("account"), "principal_arn": ident.get("arn"),
+            "principal_type": principal_type(ident.get("arn")), "distinct_from_phase1_identity": True,
+            "allowed_operations": sorted(INSIGHTS_OPERATIONS)}
+
+
 def build_tools(rt: Runtime) -> dict:
     cfg = rt.config
 
@@ -37,6 +53,8 @@ def build_tools(rt: Runtime) -> dict:
                 "max_pages": cfg.max_pages,
             },
         }
+        if cfg.insights_enabled:
+            facts["insights"] = _insights_status(rt)
         return ToolResult("aws_health_check", OK,
                           f"Authenticated to AWS account {ident.get('account')} in {cfg.aws_region}.",
                           facts=facts,

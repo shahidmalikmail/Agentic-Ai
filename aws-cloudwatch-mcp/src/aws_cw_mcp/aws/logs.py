@@ -80,6 +80,11 @@ class LogsService:
         value, _ = self._cache.get_or_set(("log_groups", prefix), fetch)
         return value
 
+    def list_group_records(self, prefix: Optional[str] = None) -> list:
+        """Cached DescribeLogGroups records (name, retention_days, ...) honoring the allowlist."""
+        groups, _truncated = self._all_groups(prefix)
+        return [g for g in groups if self._allowed(g["name"])]
+
     def discover(self, keyword: Optional[str] = None, category: Optional[str] = None,
                  name_prefix: Optional[str] = None, limit: int = 100) -> ToolResult:
         tool = "aws_discover_log_groups"
